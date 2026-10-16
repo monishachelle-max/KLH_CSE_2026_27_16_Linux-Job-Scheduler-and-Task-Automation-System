@@ -1,0 +1,9 @@
+/build/
+/data/jobs.db
+/data/jobs.db.tmp
+/logs/*.log
+*.o
+*.d
+*.swp
+*.swo
+*~
