@@ -1,434 +1,412 @@
 # Linux Job Scheduling Alerts
 
-A foreground job scheduler written in C for Linux. The application stores
-scheduled jobs in `data/jobs.db`, runs due jobs while it is open, and saves
-each job's output and execution history in `logs/job_<id>.log`.
+## 1. Team Details
 
-## Project details
+- **Project Title:** Linux Job Scheduling Alerts
+- **Team Number:** 16
+- **Team Members and Roll Numbers:**
+	- Monisha Raghini Chelle: 2520030537
+	- Shaik Sabiya Tabassum: 2520030502
+	- kolipaka Siri Chandana: 2520030453
+- **Faculty Name:** Dr. K. Anusha
+- **Course:** Operating Systems and Systems Programming (OSSP)
+- **Class:** [To be supplied by the team]
+- **Section:** 6
+- **Department:** CSE
 
-- **Project title:** Linux Job Scheduling Alerts
-- **Project description:** A terminal-based scheduler that persists one-time
-  jobs and launches a small allowlist of Linux programs at future local times.
-- **Objectives:** validate scheduled jobs, preserve status across restarts,
-  execute approved programs as child processes, and record their output and
-  exit results.
-- **Team name:** [Enter team name, if applicable]
-- **Team members and IDs:** [Enter names and IDs, if required]
-- **Faculty/ma'am:** [Enter faculty name]
-- **Class, section, and department:** [Enter details, if required]
-- **Technologies:** C11, POSIX/Linux system calls, GCC, GNU Make, Ubuntu/WSL.
+Existing names and institutional details are retained from the supplied README;
+the team must confirm their spelling and accuracy before submission.
 
-## Project overview
 
-The menu accepts a program selection and future local time. The job manager
-assigns an ID, validates and stores the record, and applies allowed status
-transitions. The foreground scheduler checks due times while the menu waits
-for input. The process manager runs only `date`, `echo`, `true`, or `false`.
-It redirects a command's standard output and error to its per-job log and
-collects the real command exit result. A new anonymous pipe reports that
-result from the command's supervising child to the original parent. Job
-records are stored in `data/jobs.db`; output and status history are stored in
-`logs/`. Due jobs are dispatched one at a time through a joined POSIX worker
-thread.
+---
 
-## Course outcome mapping
+## 2. Project Description
 
-This mapping follows the CO topic descriptions provided with the project
-request. It is a project-level mapping, not an official institutional
-verification; confirm exact wording with the course handout.
+Linux Job Scheduler is a terminal-based job scheduling application developed using C on Linux. It allows users to schedule approved commands for future execution, view scheduled jobs, monitor job status, inspect execution logs, and cancel pending jobs.
 
-| CO | Concept | Actual implementation | Source files | Purpose and evidence |
-| --- | --- | --- | --- | --- |
-| CO1 | Linux system calls and OS service interaction | Uses `poll`, `read`, file operations, `fork`, `exec`, `waitpid`, and directory/file APIs. | `src/menu.c`, `src/process_manager.c`, `src/job_storage.c` | Linux OS interfaces drive input, process execution, and persistence. Exercised by `make test`; this is not a demonstration of every Linux command or service. |
-| CO2 | Process creation, execution, waiting, and termination | Parent creates a supervisor child; it creates the command process; approved programs run with `execv`/`execve`; both process levels are waited for and reaped. | `src/process_manager.c` | Captured `date`/`echo`/`true` exit 0 and `false` exit 1; controlled exec/fork failures are covered by `tests/test_process_failures.c` and `tests/test_verification.sh`. |
-| CO3 | Inter-process communication with an anonymous pipe | The original parent creates a pipe before `fork`; the supervisor waits for the command and writes a fixed execution-result record; parent reads and reports the received result. | `src/process_manager.c` | `tests/test_scheduler.sh` and `tests/test_verification.sh` check success, failure, and exec-failure result messages. This does not implement FIFO, signals, process groups, or sessions. |
-| CO4 | Memory safety and memory management | Production records remain in a bounded static array. Record validation checks ID, time, string termination, status, and exit-code consistency; storage APIs guard invalid arrays. A separate `calloc`/`free` example demonstrates heap allocation and release. | `src/job_manager.c`, `src/job_storage.c`, `include/job_manager.h`, `examples/memory_management_demo.c` | Scheduler tests reject inconsistent records; Valgrind was run on startup/shutdown, a scheduled child execution, and the memory example. The application does not implement virtual memory, paging, or a dynamic job list. |
-| CO5 | File descriptors, persistent storage, and file I/O | Saves the database by temporary-file replacement; appends and reads execution logs; redirects child stdout/stderr to the log. | `src/job_storage.c`, `src/process_manager.c` | Persistence/restart, log output, and controlled write failures are tested by `make test`. |
-| CO6 | Concurrency and synchronization | A POSIX worker thread executes each due job via `pthread_create`; the scheduler joins it before reading its result or updating the record. The thread receives a private `Job` copy; job records, database writes, and status transitions remain on the scheduler thread, so no mutex is needed for this serialized design. | `src/scheduler.c`, `src/process_manager.c`, `Makefile` | Integration tests assert one worker-thread message per executed job and verify success/failure status and logs. Jobs are not run in parallel; no condition variables or semaphores are used. |
+The project demonstrates how Linux operating-system services can be used to manage processes, execute commands, communicate between processes, handle files, validate job records, and use worker threads.
 
-## File-by-file explanation
+The application is designed for execution in a controlled Linux environment, including Ubuntu on Windows Subsystem for Linux (WSL).
 
-| File or directory | Responsibility | CO relevance |
-| --- | --- | --- |
-| `src/main.c` | Starts the interactive application through `menu_run`. | Entry point only; no separate CO claim. |
-| `src/menu.c` | Reads menu actions and job input, validates date/time, displays jobs/status/logs, polls while awaiting input. | CO1 system interfaces; scheduling user flow. |
-| `src/job_manager.c` | Owns the fixed-capacity job array; validates records, allocates IDs, updates allowed states, and cancels pending jobs. | CO4 record bounds/invariants; supports scheduling/status. |
-| `src/scheduler.c` | Finds due Pending records, starts one worker thread per due job, joins it, then updates status and displays logs. | CO6 pthread execution and join synchronization; job-state changes remain serialized. |
-| `src/process_manager.c` | Validates the allowlist, forks supervisor/command processes, redirects output, executes approved programs, waits, and transfers result by pipe. | CO1 system calls; CO2 processes; CO3 anonymous-pipe IPC. |
-| `src/job_storage.c` | Loads and saves `data/jobs.db`; creates paths and appends/prints logs. | CO1 file APIs; CO4 storage argument bounds; CO5 persistence and file I/O. |
-| `include/job_manager.h` | Defines `Job`, `JobStatus`, capacity/string bounds, and manager APIs. | CO4 data layout/bounds. |
-| `include/process_manager.h` | Declares program validation and execution APIs. | CO2/CO3 API surface. |
-| `include/menu.h`, `include/scheduler.h`, `include/job_storage.h` | Declare their respective module APIs. | Supports the corresponding modules; no independent feature claims. |
-| `Makefile` | Builds the scheduler and runs integration/verification tests; `clean` removes build output. | Reproducible build/test evidence. |
-| `data/jobs.db` | Runtime persistence file, created/updated by the application. | CO5. |
-| `logs/` | Runtime per-job logs containing program output and execution/status metadata. | CO5. |
-| `tests/test_scheduler.sh` | End-to-end scheduling, IPC result, record validation, cancellation, and persistence checks. | CO2, CO3, CO4, CO5. |
-| `tests/test_verification.sh` | Real-program timing/output checks and additional regression/failure tests. | CO2, CO3, CO4, CO5. |
-| `tests/test_process_failures.c` | Test-only controlled fork/exec/log failures and child-reaping checks. | CO2 and CO3 failure evidence. |
-| `tests/test_cases.md` | Describes covered test scenarios. | Test reference. |
-| `examples/memory_management_demo.c` | Separate educational `calloc`/bounds-check/`free` example; not used by the scheduler. | CO4 demonstration only. |
-| `docs/module_mapping.md`, `docs/submission_audit.md`, `VERIFICATION_REPORT.md` | Existing architecture, audit, and verification documentation. | Supporting context; see `docs/CO_MAPPING.md` for the updated mapping. |
+## 3. Objectives
 
-## Build and run instructions
+- Schedule commands for execution at a specified future time.
+- Execute scheduled commands using Linux process-management system calls.
+- Track job status and exit codes.
+- Store job information persistently.
+- Record command output and execution logs.
+- Demonstrate inter-process communication using an anonymous pipe.
+- Validate job records and improve memory safety.
+- Demonstrate POSIX worker-thread execution where implemented.
+- Apply operating-system concepts through a working C application.
 
-Open the project in Ubuntu/WSL (in VS Code use **WSL: Reopen Folder in WSL**),
-then run:
+## 4. Technologies Used
 
-```sh
-cd /mnt/c/MONISHA/KLH/TriSem/VSCode/src/OSSP_Project/Linux_Job_Scheduler
-make
-make run
-```
+- **Programming language:** C
+- **Operating system:** Linux / Ubuntu WSL
+- **Compiler:** GCC
+- **Build system:** GNU Make
+- **Process management:** `fork()`, `execv()`/`execve()`, `waitpid()`
+- **File I/O:** `open()`, `dup2()`, file descriptors, and standard file operations
+- **Inter-process communication:** Anonymous pipes
+- **Thread execution:** POSIX threads (`pthread_create()` and `pthread_join()`), one job at a time
+- **Version control:** Git and GitHub
 
-Run the test suite and clean/rebuild with the existing Makefile targets:
+## 5. Main Features
 
-```sh
-make test
-make clean
-make CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror" test
-```
+1. Schedule approved commands for future execution.
+2. View scheduled jobs and their status.
+3. Execute commands in child processes.
+4. Capture command output in job-specific log files.
+5. Record job results and exit codes.
+6. Cancel pending jobs.
+7. Store job records in `data/jobs.db`.
+8. Communicate execution results between processes through an anonymous pipe.
+9. Validate job records before accepting or processing them.
+10. Execute each due job in a real POSIX worker thread, joined before the next job.
 
-The memory-management example is separate from the scheduler build:
+The application supports only the commands allowed by its implementation. It is not intended to be a general-purpose shell or a replacement for system-wide scheduling services.
 
-```sh
-mkdir -p build
-cc -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -Iinclude \
-  -std=c11 -Wall -Wextra -Wpedantic -Werror \
-  examples/memory_management_demo.c -o build/memory-management-demo
-./build/memory-management-demo
-```
-
-If Valgrind is installed, run it from an isolated working directory so the
-application does not use the project's saved job database:
-
-```sh
-mkdir -p /tmp/job-scheduler-valgrind
-cd /tmp/job-scheduler-valgrind
-printf '5\n' | valgrind --leak-check=full --show-leak-kinds=all \
-  --errors-for-leak-kinds=definite,indirect --error-exitcode=99 \
-  /mnt/c/MONISHA/KLH/TriSem/VSCode/src/OSSP_Project/Linux_Job_Scheduler/build/linux-job-scheduler
-```
-
-From the project directory, compile and check the separate allocation example:
-
-```sh
-mkdir -p build
-cc -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -Iinclude \
-  -std=c11 -Wall -Wextra -Wpedantic -Werror \
-  examples/memory_management_demo.c -o build/memory-management-demo
-valgrind --leak-check=full --show-leak-kinds=all \
-  --errors-for-leak-kinds=definite,indirect --error-exitcode=99 \
-  ./build/memory-management-demo
-```
-
-## Requirements
-
-- Linux (the process manager uses `fork`, `execv`, `poll`, and `waitpid`).
-- GCC and GNU Make.
-- The approved programs listed below must be installed at their standard
-  `/usr/bin` paths.
-
-On Ubuntu, install the compiler and build tools with:
-
-```sh
-sudo apt update
-sudo apt install build-essential
-```
-
-On Windows, use the Ubuntu WSL terminal in VS Code, not a Windows C runner.
-Build the entire project with Make; compiling an individual source or header
-file is not sufficient. The tests also use Ubuntu's standard `sh`, `awk`,
-`grep`, `cmp`, `timeout`, and GNU `date` utilities.
-
-If VS Code reports that `stdio.h` or `stddef.h` cannot be found, its C/C++
-extension is probably running in Windows without a Linux toolchain. Reopen
-the project using **WSL: Reopen Folder in WSL**, install/enable C/C++ in the
-WSL window, and select `/usr/bin/gcc` as its compiler. Do not add Linux system
-headers to a Windows compiler configuration or try to run a header file.
-The Makefile build in Ubuntu is the authoritative compilation check.
-
-## Build and run
-
-```sh
-make
-make run
-```
-
-You can also launch `./build/linux-job-scheduler` directly. The menu provides:
-
-1. **Schedule a Task** — choose an approved program by its number, enter a
-   custom message if you selected `echo`, then enter a future local time in
-   `YYYY-MM-DD HH:MM:SS` format.
-2. **View Scheduled Jobs** — list saved jobs and their scheduled times/status.
-3. **View Job Status and Logs** — enter a job ID to see its current status and
-   complete log.
-4. **Cancel a Pending Task** — enter a job ID. Only a job that has not started
-   can be cancelled.
-5. **Exit**.
-
-Approved programs are `date`, `echo`, `true`, and `false`.
-The program is selected from this fixed allowlist and executed by
-absolute path with `execv` or `execve`; user input is never passed to a shell.
-There is no general Arguments prompt. Only `echo` displays `Enter message:`.
-Enter up to 255 characters, such as `Hello from my scheduler!`. The entire
-message is passed as one literal argument; spaces, quotes, backslashes, and
-shell syntax are not interpreted. Empty messages print a blank line.
-Control characters and echo option-only messages such as `-n` or `-e` are
-rejected. Every other program runs without arguments.
-
-For example, choosing option 1 and then program 1 (`date`) produces this
-interaction (enter a date/time that is still in the future on your machine):
+## 6. Project Folder Structure
 
 ```text
-Select an option: 1
-
-Available programs:
-1. date
-2. echo
-3. true
-4. false
-
-Select program: 1
-
-Enter scheduled date and time (YYYY-MM-DD HH:MM:SS):
-2099-10-15 18:40:00
-
-Job scheduled successfully!
-Job ID: 1
-Program: date
-Status: PENDING
+Linux_Job_Scheduler/
+├── build/
+├── data/
+├── docs/
+├── include/
+├── logs/
+├── results/
+├── src/
+├── tests/
+├── .gitignore
+├── Makefile
+└── README.md
 ```
 
-IDs continue from the saved database, so an existing project may show an ID
-other than 1. When the scheduled time arrives, the terminal shows the final
-status, such as `Job 1: Succeeded (exit code 0).`, followed by the recorded
-execution log including the actual program output. That output (the current
-date for `date`, or your exact custom message for `echo`) is also retained in
-`logs/job_<id>.log`. Use menu option 3 and the job ID to view it again.
-Display happens after the child finishes, not as a live output stream.
-Exit and end-of-input explicitly warn that pending jobs will not run until
-the application is restarted.
+### Folder and File Descriptions
 
-Existing echo messages are preserved across restart, including messages saved
-by the previous fixed-message version. The database's arguments column stores
-the echo message; it is not a source of arbitrary command options. Other
-programs must have an empty arguments column. Unsupported saved programs or
-invalid message data cause an explicit startup error rather than execution.
+| File/Folder | Purpose |
+|---|---|
+| `build/` | Compiled executable and object files generated during builds |
+| `data/` | Persistent job database |
+| `docs/` | Audit evidence in `audit-verification.md`; final report and PPT are still missing |
+| `include/` | Header files and shared declarations |
+| `logs/` | Job-specific execution logs |
+| `results/` | Screenshots and demonstration/test evidence |
+| `src/` | C source code for the application |
+| `tests/` | Automated tests and test scripts |
+| `.gitignore` | Specifies generated or unnecessary files to exclude from Git |
+| `Makefile` | Contains build and other supported project commands |
+| `README.md` | Project overview, setup, execution instructions, and CO mapping |
 
-## How automatic execution works
+### Source File Responsibilities
 
-The menu calls the scheduler while waiting for keyboard input. `poll` waits
-for input or the next due time; even an unfinished input line does not stop
-the timer. A due job moves from Pending to Running, then the process manager:
+The source files in this repository are:
 
-1. Creates an anonymous pipe and calls `fork` to create a supervising child.
-2. The supervisor opens the job log and forks the command process.
-3. The command process redirects stdout/stderr with `dup2` and calls `execv`
-   (or `execve` for echo with a controlled environment).
-4. The supervisor uses `waitpid` to collect/reap the command and writes a
-   fixed execution-result record through the pipe. The command process closes
-   the pipe descriptor and cannot interfere with the message.
-5. The original parent reads the complete result, checks it, and uses
-   `waitpid` to reap the supervisor.
+- `src/main.c` — Application entry point.
+- `src/menu.c` — Terminal menu and user interaction.
+- `src/job_manager.c` — Job records, validation, and job-related operations.
+- `src/job_storage.c` — Persistent storage of job information.
+- `src/process_manager.c` — Child-process creation, command execution, exit-status handling, output redirection, and pipe communication.
+- `src/scheduler.c` — Checks scheduled times and dispatches due jobs through a worker thread.
+- `include/` — Header files defining shared data structures and function declarations.
 
-The pipe message contains the command's exit code, terminating signal if any,
-and a concise success/failure description. Pipe reads and writes handle
-partial transfers and `EINTR`; the unused ends are closed so the parent does
-not wait for EOF from an unrelated process. The command's ordinary output
-continues to go only to its job log.
+The three executable tests are `tests/test_scheduler.sh`,
+`tests/test_verification.sh`, and the wrapped C harness
+`tests/test_process_failures.c`. Coverage is described in `tests/test_cases.md`.
 
-Exit code 0 produces Succeeded; a nonzero code produces Failed. For example,
-`false` deliberately returns 1: that means it executed correctly but its job
-result is Failed. The parent reports the result actually received from the
-pipe. Failure to execute an executable is recorded with exit code 127; the
-job log identifies the approved program whose launch failed. Failure to
-create a process is reported and the job is marked Failed with
-application-assigned code 1.
-Termination by a signal is represented as `128 + signal number`. An
-infrastructure/logging error is reported explicitly; if the child has already
-exited, its real exit code is retained rather than replaced with an invented
-process failure code.
+## 7. System Architecture
 
-Pending jobs can only become Running or Cancelled. Running jobs can only
-become Succeeded or Failed. Completed and cancelled jobs cannot be rerun or
-cancelled again. On restart, interrupted Running records become Failed.
-IDs increase from the highest saved ID; duplicate or negative IDs in a
-database are rejected rather than silently used.
+The application follows this general execution flow:
 
-## Program output
+1. The user interacts with the terminal menu.
+2. The application validates the requested job and its scheduled time.
+3. The job manager maintains the job record.
+4. The storage module saves and retrieves job information.
+5. `read_line()` uses `poll()` and `scheduler_milliseconds_until_next()` to dispatch due jobs even while input is incomplete.
+6. `scheduler_run_due()` persists the Running state and creates a worker using `pthread_create()`.
+7. The worker calls `process_manager_run()`, which creates a result pipe and forks a supervisor process.
+8. The supervisor forks the command process; that process redirects stdout/stderr with `dup2()` and executes the approved program. A second close-on-exec pipe distinguishes successful launch from execution failure.
+9. The supervisor calls `waitpid()` and writes an `ExecutionResult` through the anonymous result pipe. The worker reads it and reaps the supervisor.
+10. The main thread joins the worker with `pthread_join()`, persists the final status, and displays the real execution log.
 
-| Choice | Program | Expected log output | Expected exit code / status |
-| --- | --- | --- | --- |
-| 1 | `date` | Current date/time from Linux at execution | 0 / Succeeded |
-| 2 | `echo` | Your custom message, for example `Hello from my scheduler!` | 0 / Succeeded |
-| 3 | `true` | No program output | 0 / Succeeded |
-| 4 | `false` | No program output | 1 / Failed |
+Jobs run sequentially. The menu waits while each worker is joined. Pending jobs
+remain saved when the application exits, but execute only while it is running;
+overdue pending jobs execute on restart. This is not a background service.
 
-An actual Ubuntu WSL verification run on 2026-10-15 captured the following
-program output, excluding timestamped log metadata:
+## 8. Course Outcome (CO) Mapping
 
-```text
-date:   Thu Oct 15 22:43:47 IST 2026
-echo:   Hello from my scheduler!
-false:  (no standard output)
-true:   (no standard output)
-```
+The project demonstrates selected concepts from CO1–CO6. It does not implement every topic listed in the complete course syllabus.
 
-These are recorded observations, not hardcoded application results. The
-date will depend on the next run. Tests use temporary working directories
-to protect project data and compare output with the actual environment.
+### CO1 — OS as a Service Layer
 
-## Demonstration and expected output
+**Syllabus topics:** System calls, user/kernel space, kernel services, shell execution, Linux architecture, and systems programming.
 
-The following result lines were captured by the test suite on 2026-10-15.
-Job IDs and the date/time vary by run.
+**Project implementation:**
+- Uses Linux system calls and library interfaces.
+- Uses terminal input and output.
+- Creates and executes processes.
+- Uses file descriptors and file operations.
 
-Successful scheduled job (`date`, `echo`, or `true`):
+**Relevant files:** `src/menu.c`, `src/process_manager.c`, `src/main.c`.
+
+**Demonstration:** Schedule a job, execute an approved command such as `date`, and observe the command output and exit status.
+
+**Limitation:** The project does not implement a shell or the Linux kernel architecture.
+
+### CO2 — Processes and Process Control
+
+**Syllabus topics:** Process creation, execution, lifecycle, synchronization, termination, and scheduling concepts.
+
+**Project implementation:**
+- Creates child processes with `fork()`.
+- Executes commands with `execv()` or `execve()`.
+- Waits for child termination with `waitpid()`.
+- Checks exit status and signal-caused termination.
+- Schedules and tracks jobs.
+
+**Relevant files:** `src/process_manager.c`, `src/scheduler.c`, and `src/job_manager.c`.
+
+**Demonstration:** Run a successful command and a failing command, then inspect their exit codes and job statuses.
+
+**Limitation:** Cancellation applies only to Pending jobs. The application does
+not send termination signals to running processes or implement CPU-scheduling algorithms.
+
+### CO3 — Inter-Process Communication
+
+**Syllabus topics:** Anonymous pipes, named FIFOs, signals, signal handlers, process groups, sessions, and job control.
+
+**Project implementation:**
+- Uses an anonymous pipe to transfer an execution-result message from the child process to the parent process.
+- Uses process termination status to identify normal completion or signal-caused termination.
+
+**Relevant file:** `src/process_manager.c`.
+
+**Demonstration:** Observe the parent receiving the actual child-process result, for example:
 
 ```text
 Received execution result from child: Job completed successfully.
-Job 1: Succeeded (exit code 0).
 ```
 
-Failing approved command (`false`, whose real exit code is 1):
+The message must correspond to a real pipe write and read.
 
-```text
-Received execution result from child: Job failed with exit code 1.
-Job 1: Failed (exit code 1).
-```
+**Limitation:** The anonymous pipe does not mean that named FIFOs, custom signal handlers, `SIGALRM` scheduling, process groups, or session management are implemented.
 
-Successful record validation, printed only after the new record passes its
-field/invariant checks:
+### CO4 — Memory Management
+
+**Syllabus topics:** Virtual memory, address translation, page tables, page faults, demand paging, process address spaces, dynamic allocation, copy-on-write, memory errors, and debugging tools.
+
+**Project implementation:**
+- Maintains and accesses job records.
+- Validates job records and checks appropriate bounds.
+- Reviews string and buffer handling for memory safety.
+- Uses fixed arrays of at most 100 jobs, 32-byte command buffers, and 256-byte message buffers.
+- Uses bounded input, string-termination checks, numeric conversion checks, and status-transition validation.
+- A Valgrind lifecycle test completed with zero reported errors and no outstanding heap allocations; see `docs/audit-verification.md` for its scope.
+
+**Relevant files:** `src/job_manager.c` (`validate_job_record()`), `include/job_manager.h`, `src/menu.c` (`read_line()`), and `src/job_storage.c` (`job_storage_load()`).
+
+**Demonstration:** Submit a valid job and observe the validation message when the corresponding validation check succeeds:
 
 ```text
 Job record validated successfully.
-Job scheduled successfully!
 ```
 
-Menu option 3 displays the selected job's stored status and log, including
-the command's output. The end-to-end tests also verify that a saved Pending
-job has no execution log before its due time, and that the final status and
-exit code match the stored record.
+**Limitation:** Record validation is not an implementation of virtual memory, page tables, demand paging, or copy-on-write. Those mechanisms are provided by the operating system.
 
-**CO6 worker-thread demonstration:** the following message is printed by the
-worker thread after the process manager has received and validated the real
-child result and confirmed through a close-on-exec pipe that the approved
-program reached `exec`. Job IDs and result status vary by run:
+### CO5 — File Systems and File I/O
+
+**Syllabus topics:** Unix file abstraction, file descriptors, Linux I/O system calls, buffered and unbuffered I/O, inodes, VFS, memory-mapped I/O, and ext4.
+
+**Project implementation:**
+- Saves and retrieves job records.
+- Uses files for persistence.
+- Redirects command output to log files.
+- Reads and writes information through file interfaces.
+
+**Relevant files:** `src/job_storage.c`, `src/process_manager.c`, and `data/`.
+
+**Demonstration:** View saved jobs, execute a command, and inspect the corresponding job log.
+
+**Limitation:** The project does not implement its own filesystem, inode management, VFS, ext4, or memory-mapped I/O.
+
+### CO6 — Concurrency and Synchronization
+
+**Syllabus topics:** Threads, processes, race conditions, shared data, mutexes, condition variables, semaphores, deadlocks, and synchronization hazards.
+
+**Project implementation:**
+- `scheduler_run_due()` creates a POSIX worker for each due job.
+- `run_job_worker()` executes the process manager on a copied Job record.
+- `pthread_join()` synchronizes completion before the main thread reads worker results or updates stored jobs.
+- Controlled `pthread_create()` failure is tested without printing a false worker-execution message.
+
+**Relevant files:** `src/scheduler.c` (`scheduler_run_due()`, `run_job_worker()`), `src/process_manager.c`, and `tests/test_process_failures.c`.
+
+**Demonstration:** A successfully launched command produces a message from the actual worker, for example:
 
 ```text
-Received execution result from child: Job completed successfully.
-Job 1 executed by worker thread.
-Job 1: Succeeded (exit code 0).
+Job 17 executed by worker thread.
 ```
 
-The message is not printed if thread creation fails, program execution does
-not reach `exec`, or the process manager cannot complete result handling.
-Nonzero command exits still count as executed jobs and print the message
-alongside their real failure status.
-`pthread_join` synchronizes the worker's result with the scheduler before it
-updates the job record. Jobs remain one-at-a-time; this is not a parallel
-worker pool.
+**Limitation:** Thread creation and joining are implemented and tested, but jobs
+do not execute simultaneously. There are no mutexes, condition variables, or semaphores.
 
-## Testing
+## 9. Requirements
 
-Run both automated test suites with:
+- Ubuntu Linux or Ubuntu on WSL.
+- GCC C compiler.
+- GNU Make.
+- Git, if cloning the repository.
+- POSIX-compatible process and thread interfaces.
+- GNU `date` (including `-d`), coreutils `timeout`, `mktemp`, `getconf`, `awk`, `sed`, `grep`, and `cmp` for tests.
+- The four approved executables at `/usr/bin/date`, `/usr/bin/echo`, `/usr/bin/true`, and `/usr/bin/false`.
+- A GNU-compatible linker supporting `--wrap` for the controlled failure harness.
+- Optional testing tools such as Valgrind, if available.
 
-```sh
+## 10. Setup and Execution
+
+### Step 1: Open the project directory
+
+Open Ubuntu/WSL and navigate to the directory containing the project:
+
+```bash
+cd /path/to/Linux_Job_Scheduler
+```
+
+Replace the example path with the actual location of your project.
+
+### Step 2: Compile the project
+
+The existing `all` target builds `build/linux-job-scheduler`:
+
+```bash
+make
+```
+
+For the strict build used in the audit:
+
+```bash
+make clean
+make CFLAGS='-std=c11 -Wall -Wextra -Wpedantic -Werror -Wformat=2 -Wshadow -Wconversion'
+```
+
+### Step 3: Run the application
+
+Run the foreground application from the project root:
+
+```bash
+make run
+```
+
+Alternatively, run `./build/linux-job-scheduler`. Database and log paths are
+relative to the current working directory. Use only one instance per working
+directory: database updates are not protected by inter-instance locking.
+
+### Step 4: Run the tests
+
+The `test` target runs both shell suites and builds/runs the C failure harness:
+
+```bash
 make test
 ```
 
-The tests create their job database and logs inside temporary directories;
-they do not execute or change your saved project jobs. The detailed suite
-schedules each program individually, confirms Pending status, waits with no
-further input, then checks the final status, output, exit code, logs, and start
-time. It asserts that dispatch is not early and is within two seconds of the
-requested time under the test environment; this is not a real-time guarantee.
+To run the suites separately:
 
-Regression tests cover cancellation, invalid calendar/past/current times,
-valid leap dates, job IDs, the 100-job limit, partial input, database-write
-errors, and persistence across application exit and restart. A test-only
-executable uses GNU linker wrappers to simulate `execv`, `fork`, and
-`pthread_create` failures. Those wrappers do not affect the normal application
-or system executables. Tests also check exit-code preservation during a
-controlled logging failure,
-exact-format dates, embedded control-character rejection, CRLF terminal input,
-the 255-byte echo boundary, automatic output display, and the exit reminder.
-The new tests check that the anonymous pipe conveys success, nonzero exit,
-and exec-failure results, and that malformed job-record state/exit-code
-combinations are rejected. Header dependency rebuilding is checked too.
-
-Valgrind was available and executed on 2026-10-15 against scheduler
-startup/shutdown, a real scheduled `date` child/pipe result, and
-`examples/memory_management_demo.c`; each reported
-`ERROR SUMMARY: 0 errors from 0 contexts`. These are bounded runs, not proof
-that every execution path is free of memory errors.
-
-Detailed transcripts and actual program logs from the latest run are copied
-to `build/verification-evidence/` before temporary directories are removed.
-The test output distinguishes controlled failure simulation from real
-program execution. A full run takes roughly a minute because it waits for
-real future scheduling times.
-
-For a strict build treating warnings as errors:
-
-```sh
-make clean
-make CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror" test
+```bash
+sh tests/test_scheduler.sh
+make build/test-process-failures
+sh tests/test_verification.sh
 ```
 
-Remove compiled output with:
+The verification script supplies the temporary database required by the C
+harness. Do not run the harness directly in the project root: it intentionally
+updates the database in its working directory. Both shell suites use temporary
+data and logs. Allow at least two minutes for the complete suite, rather than
+terminating the entire run with a short outer timeout.
 
-```sh
+### Step 5: Clean generated build files
+
+Remove generated binaries, objects, dependencies, and verification evidence:
+
+```bash
 make clean
 ```
 
-## Foreground scheduler limitations
+This does not remove the real `data/jobs.db` or `logs/`.
 
-- This is a foreground application, not a daemon or system service. It checks
-  due times and runs jobs only while it is running; exiting the application
-  stops scheduling. Pending jobs saved before exit remain in the database and
-  overdue pending jobs run when the application is started again. Jobs left in
-  the `Running` state by an interrupted application are marked failed on
-  restart.
-- Saved jobs and logs remain on disk after application exit or a system
-  restart, provided the files are preserved. The application does not start
-  itself at boot. Restart it from the same working directory to load pending
-  jobs; overdue pending jobs run then, not while the application was stopped.
-  Abrupt power loss is not covered by a crash-durable storage guarantee.
-- Run only one scheduler instance per data directory. Concurrent instances
-  are not coordinated and could overwrite each other's saved state.
-- Jobs run one at a time. The scheduler waits for each child process with
-  `waitpid` and joins its worker thread, so a slow approved program
-  temporarily blocks menu interaction.
-- A POSIX worker thread executes each job, but jobs are not run in parallel.
-  The scheduler passes a private job snapshot to the worker and performs all
-  job-state and database updates only after joining it; this serialized
-  ownership means no mutex, condition variable, or semaphore is needed.
-- The process manager's post-`fork()` child paths use only async-signal-safe
-  operations before `exec`/`_exit`, so forking from the worker does not enter
-  unsafe stdio or string-formatting routines in the child.
-- The production job list is a bounded static array of 100 records; it does
-  not use `malloc`, `calloc`, or `realloc`. The separate memory example is
-  educational and is not linked into the application.
-- The pipe carries a result between related processes. No named FIFO,
-  signal handler, process-group/session management, or interactive shell
-  job-control feature is implemented.
-- Times use the machine's local timezone and have one-second precision.
-  This is not a real-time scheduler: OS load, another running task, system
-  sleep, and manual clock changes can delay dispatch. Interrupted parent
-  processes do not guarantee that an already-started child is terminated.
-- Jobs are one-time tasks; recurring schedules, editing, and cancellation of
-  already-running jobs are not supported.
-- The scheduler stores up to 100 jobs. Only four approved programs and a
-  custom echo message are supported; arbitrary program options are not.
-- The database and logs are relative to the current working directory, so run
-  the application from the project directory to use the project's `data/` and
-  `logs/` folders.
+## 11. Testing and Validation
 
-See [docs/module_mapping.md](docs/module_mapping.md) for the source module
-responsibilities and [tests/test_cases.md](tests/test_cases.md) for test
-coverage. See [docs/submission_audit.md](docs/submission_audit.md) for the
-submission checklist, limitations, verification results, and viva notes.
-See [docs/CO_MAPPING.md](docs/CO_MAPPING.md) for the implemented CO mapping
-and unsupported topics. The mapping follows the topic descriptions supplied
-for this project and must be checked against the official course handout.
+Test the following scenarios:
+
+1. Schedule a valid future job.
+2. Reject an invalid command or invalid scheduled time.
+3. Execute a successful command such as `date` or `echo`.
+4. Execute a failing command such as `false`, if allowed.
+5. Verify the recorded exit code and final job status.
+6. View saved jobs and their execution logs.
+7. Cancel a pending job.
+8. Restart the application and verify persistent job information.
+9. Verify that the CO3 pipe message is transferred through a real pipe.
+10. Verify that the CO4 validation message follows an actual validation check.
+11. Verify the CO6 message comes from an actual worker thread if threads are implemented.
+12. Run the automated tests and available memory checks.
+
+### Verified audit results (15 October 2026)
+
+On Ubuntu WSL2 x86_64 with GCC 15.2.0, the strict clean build completed without
+warnings. `make test` completed successfully before and after the test fixes:
+both shell suites and the C failure harness passed. `date`, `echo`, and `true`
+returned 0; `false` returned 1 and was correctly recorded as Failed. All four
+detailed program sessions had a measured dispatch delay of 0 seconds.
+
+Database-write errors at all six prompts exited with status 1. Invalid saved
+records, exhausted IDs, the 99/100/101-job boundaries, input validation,
+cancellation, restart persistence, actual pipe delivery, and worker creation
+failure passed. Hash comparisons confirmed the real database and all logs were
+unchanged. A Valgrind lifecycle run reported zero errors and no remaining heap
+allocations; this is not exhaustive proof of memory safety.
+
+Fresh transcripts and logs are generated under `build/verification-evidence/`
+(ignored by Git and removed by `make clean`). Failure diagnostics are copied to
+`build/verification-evidence/failed-run.*`. The audit and exact scope are in
+[`docs/audit-verification.md`](docs/audit-verification.md).
+
+### Demonstration
+
+1. Run `make run`, choose 1, then program 1 (`date`), and enter a local time at least 10 seconds in the future using `YYYY-MM-DD HH:MM:SS`.
+2. Choose 2 to view Pending jobs; leave the menu idle and observe automatic execution, pipe-result output, worker output, and the date log.
+3. Choose 3 and the displayed job ID to inspect its status and log.
+4. Repeat with program 2 (`echo`, with a message) and program 4 (`false`, expected Failed with exit code 1).
+5. Schedule another future job, cancel its displayed ID with option 4, and verify it never executes. Finished jobs cannot be cancelled.
+6. Schedule a future job, exit with option 5, then restart after its due time to demonstrate persistence and overdue execution.
+7. Run `make test` for malformed-input and controlled-failure demonstrations; do not corrupt the real database to demonstrate these cases.
+
+The 23 supplied PNGs in `results/outputs/` are historical demonstration images,
+not evidence that the current test suite passed. The editor area of `CO4.png`
+shows older allocation code; use current source and fresh output when presenting.
+
+## 12. Limitations
+
+- The application executes only commands permitted by its implementation.
+- The scheduler's execution behavior depends on the application's running and restart logic.
+- The project demonstrates selected operating-system concepts rather than implementing a complete operating system.
+- An anonymous pipe does not cover every IPC topic in CO3.
+- Job-record validation does not implement the virtual-memory mechanisms listed in CO4.
+- File I/O does not mean that the project implements a filesystem.
+- Worker-thread output does not establish concurrent execution by itself.
+- Workers are joined sequentially, and input handling pauses during job execution.
+- At most 100 total records are retained, including completed and cancelled jobs; no deletion UI is implemented.
+- Storage uses temporary-file replacement, but has no inter-instance locking or `fsync()` power-loss durability guarantee.
+- Signal-caused status decoding exists but was not exercised by an end-to-end signal-termination test.
+- Rare pipe/fcntl/read/write/waitpid/pthread_join failures are not all fault-injected.
+- ShellCheck and Clang were unavailable for this audit; Valgrind was available and used.
+
+## 13. Conclusion
+
+Linux Job Scheduling Alerts is a C-based Linux application that demonstrates scheduled command execution, process management, persistent job records, file I/O, inter-process communication, and selected memory-safety and concurrency concepts.
+
+The project provides a practical way to connect operating-system concepts with a working application. Its final evaluation should be supported by the source code, successful tests, documentation, and a live terminal demonstration.
+
+
+
