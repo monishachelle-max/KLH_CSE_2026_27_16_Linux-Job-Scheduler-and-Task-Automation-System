@@ -10,7 +10,6 @@
 	- kolipaka Siri Chandana: 2520030453
 - **Faculty Name:** Dr. K. Anusha
 - **Course:** Operating Systems and Systems Programming (OSSP)
-- **Class:** [To be supplied by the team]
 - **Section:** 6
 - **Department:** CSE
 
